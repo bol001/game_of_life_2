@@ -85,6 +85,8 @@ def main():
 
     def get_cell_next_generation_state(value_pair):
 
+        # print(f'{len(value_pair)}\r\n-------\r\n')
+
         # Get the grid state value and the live neighbor count value
         grid_state_value = value_pair[0]
         live_neighbor_count_value = value_pair[1]
@@ -328,38 +330,43 @@ def main():
             ]
         )
 
+        # Note that when the arrays are later combined to create a 3D array,
+        # they will need to be of the same type. Convert the array that has the
+        # bool states to integers (0 for False and 1 for True).
+        grid_array = grid_array.astype(int)
+
+        # Convert both arrays to Dask arrays for parallel processing.
+        grid_array_da = da.from_array(
+            grid_array,
+            chunks=(200, 200)
+        )
+        # print(grid_array_da)
+
+        grid_array_live_neighbor_counts_da = da.from_array(
+            grid_array_live_neighbor_counts,
+            chunks=(200, 200)
+        )
+        # print(grid_array_live_neighbor_counts_da)
+
         # Now that we have one array that represents the current grid state
         # and another array that represents the number of live neighbors,
-        # combine both these 2D arrays into a single 3D array. Note that
-        # when we combine these arrays, because the entire array must
-        # contain the same type of values, the boolean values in the first
-        # array will be converted to integers (0 for False and 1 for True).
-        grid_array_and_live_neighbor_counts = np.array(
+        # combine both these 2D arrays into a single 3D array.
+        grid_array_and_live_neighbor_counts_da = da.from_array(
             (
-                grid_array,
-                grid_array_live_neighbor_counts
-            )
+                grid_array_da,
+                grid_array_live_neighbor_counts_da
+            ),
+            chunks=(2, array_dimension_length / 4, array_dimension_length / 4)
         )
+        # print(grid_array_and_live_neighbor_counts_da)
+
+        # print(grid_array_and_live_neighbor_counts_da.shape)
 
         # Converty the 3D array to a Dask array for parallel processing.
-        grid_array_and_live_neighbor_counts_da = da.from_array(
-            grid_array_and_live_neighbor_counts.reshape(1, 3_920_000),
-            chunks=245_000
-            # chunks=(2, 6_125, 6_125)
-        )
-        # grid_array_and_live_neighbor_counts = (
-        #     grid_array_and_live_neighbor_counts.reshape(2, 1_960_000)
+        # grid_array_and_live_neighbor_counts_da = da.from_array(
+        #     grid_array_and_live_neighbor_counts,
+        #     chunks=(1, 12_250, 12_250)
         # )
-        # print(grid_array_and_live_neighbor_counts.shape)
-        # print(grid_array_and_live_neighbor_counts)
-        # quit()
-
-        # print(grid_array_and_live_neighbor_counts.shape)
-        # print(grid_array_and_live_neighbor_counts)
-        # quit()
-
-        # print(grid_array_and_live_neighbor_counts.reshape(-1).shape)
-        # print(grid_array_and_live_neighbor_counts_da.shape)
 
         # In this 3D array, the first axis (axis 0) has two elements.
         # The first element is the array with the current grid state
@@ -375,18 +382,31 @@ def main():
         # This function takes a pair of values and returns the new state
         # for the cell in the next generation.
         next_generation_grid_states_da = da.apply_along_axis(
-            get_cell_next_generation_state,
-            0,
-            grid_array_and_live_neighbor_counts_da.reshape(2, 1_960_000),
-            shape=make_meta(grid_array_and_live_neighbor_counts_da).shape,
+            func1d=get_cell_next_generation_state,
+            axis=0,
+            arr=grid_array_and_live_neighbor_counts_da,
+            shape=(),
+            # shape=make_meta(grid_array_and_live_neighbor_counts_da).shape,
             dtype=make_meta(grid_array_and_live_neighbor_counts_da).dtype
         )
 
+        # print(make_meta(grid_array_and_live_neighbor_counts_da).shape)
+
+        # print(next_generation_grid_states_da.shape)
+        # print(next_generation_grid_states_da)
+
+        # next_generation_grid_states_da = next_generation_grid_states_da.reshape(
+        #     array_dimension_length,
+        #     array_dimension_length
+        # )
+
+        # print(next_generation_grid_states_da)
+
         # Convert the Dask array back to a NumPy array because at this point
         # Numpy should be fast enough.
-        next_generation_grid_states = next_generation_grid_states_da.compute().reshape(1400, 1400)
-        #print(next_generation_grid_states.shape)
-        #quit()
+        next_generation_grid_states = next_generation_grid_states_da.compute()
+
+        # print(next_generation_grid_states.shape)
 
         # Now that we have all the states, update the main grid with the next
         # generation of states.
