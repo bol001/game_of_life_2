@@ -23,13 +23,18 @@ def main():
         False
     )
 
-    # Set random state of grid. First determine how many cells will have their state
-    # set to True.
+    # Set the ratio of the small grid to the large grid. Ratio is over length of
+    # 1 dimension. E.g. if ratio is 5, then the small grid will be 25 times
+    # smaller than the large grid.
+    small_grid_ratio = 5
+
+    # Set random state of grid. First determine how many cells will have their
+    # state set to True.
     grid_element_count = grid_array.size
     number_of_elements_to_set = randrange(grid_element_count) + 1
 
-    # Randomly select the cells to update and update them. Iterate over the range
-    # of the number of elements we want to update.
+    # Randomly select the cells to update and update them. Iterate over the
+    # range of the number of elements we want to update.
     for i in range(number_of_elements_to_set):
 
         # Randomly select an element from the grid
@@ -62,9 +67,9 @@ def main():
     # Set width of border area around grid
     fig.subplots_adjust(left=0.025, right=0.975, top=0.975, bottom=0.025)
 
-    # Create the matplotlib axes (left most is main grid, rightmost is most active
-    # tile). Because we have not determined the most active tile yet, just set the
-    # right most axes to display the whole grid.
+    # Create the matplotlib axes (left side is main grid, right side is most
+    # active tile). Because we have not determined the most active tile yet,
+    # just set the right most axes to display the whole grid.
     ax[0].matshow(grid_array, cmap='binary', vmin=0, vmax=1)
     ax[1].matshow(grid_array, cmap='binary', vmin=0, vmax=1)
 
@@ -74,8 +79,8 @@ def main():
     # Don't show the axis labels
     plt.axis('off')
 
-    # Show the starting matplotlib plot. Set block to False so the running of the
-    # plot can be interrupted to update it.
+    # Show the starting matplotlib plot. Set block to False so the running of
+    # the plot can be interrupted to update it.
     plt.show(block=False)
 
     # Create dask client as Dask will be used to parallelize rules processing.
@@ -84,8 +89,6 @@ def main():
     print(client.dashboard_link)
 
     def get_cell_next_generation_state(value_pair):
-
-        # print(f'{len(value_pair)}\r\n-------\r\n')
 
         # Get the grid state value and the live neighbor count value
         grid_state_value = value_pair[0]
@@ -96,15 +99,13 @@ def main():
             # Case of this cell is dead
 
             if live_neighbor_count_value == 3:
-                # Case of this cell is dead and neighbors are such
-                # that cell will come alive
-
+                # Case of this cell is dead and neighbors are such that cell
+                # will come alive
                 cell_next_generation_state = True
 
             else:
-                # Case of this cell is dead and there are no
-                # changes to in the next generation
-
+                # Case of this cell is dead and there are no changes to in the
+                # next generation
                 cell_next_generation_state = grid_state_value
 
         else:
@@ -115,20 +116,18 @@ def main():
                     or
                     live_neighbor_count_value >= 4
             ):
-                # Case of this cell is alive and neighbors are
-                # such that cell will die.
-
+                # Case of this cell is alive and neighbors are such that cell
+                # will die.
                 cell_next_generation_state = False
 
             elif live_neighbor_count_value in (2, 3):
-                # Case of this cell is alive and neighbors are
-                # such that this cell will stay alive
-
+                # Case of this cell is alive and neighbors are such that this
+                # cell will stay alive
                 cell_next_generation_state = True
 
             else:
-                # Case of this cell is alive and there are no
-                # changes to it in the next generation
+                # Case of this cell is alive and there are no changes to it in
+                # the next generation
                 cell_next_generation_state = grid_state_value
 
         return cell_next_generation_state
@@ -210,7 +209,6 @@ def main():
         )
 
         grid_array_shifted_left_neighbor = np.hstack(
-
             [
                 # New column of False values added to left
                 np.full((array_dimension_length, 1), False),
@@ -314,9 +312,9 @@ def main():
             ]
         )
 
-        # Add the all the shifted arrays together to create a single array that
-        # represents the number of live neighbors for each cell. Note that we
-        # use the .astype() method to convert the boolean values to integers.
+        # Matrix-add all the shifted arrays together to create a single array
+        # that represents the number of live neighbors for each cell. Note that
+        # we convert the boolean values to integers.
         grid_array_live_neighbor_counts = sum(
             [
                 grid_array_shifted_top_neighbor.astype(int),
@@ -340,73 +338,50 @@ def main():
             grid_array,
             chunks=(200, 200)
         )
-        # print(grid_array_da)
 
         grid_array_live_neighbor_counts_da = da.from_array(
             grid_array_live_neighbor_counts,
             chunks=(200, 200)
         )
-        # print(grid_array_live_neighbor_counts_da)
 
-        # Now that we have one array that represents the current grid state
-        # and another array that represents the number of live neighbors,
-        # combine both these 2D arrays into a single 3D array.
+        # Now that we have one array that represents the current grid state and
+        # another array that represents the number of live neighbors, combine
+        # both these 2D arrays into a single 3D array.
         grid_array_and_live_neighbor_counts_da = da.from_array(
             (
                 grid_array_da,
                 grid_array_live_neighbor_counts_da
             ),
+            # Chunk up each dimension of the 3D array into 4 chunks to
+            # parallelize across 4 processors
             chunks=(2, array_dimension_length / 4, array_dimension_length / 4)
         )
-        # print(grid_array_and_live_neighbor_counts_da)
 
-        # print(grid_array_and_live_neighbor_counts_da.shape)
-
-        # Converty the 3D array to a Dask array for parallel processing.
-        # grid_array_and_live_neighbor_counts_da = da.from_array(
-        #     grid_array_and_live_neighbor_counts,
-        #     chunks=(1, 12_250, 12_250)
-        # )
-
-        # In this 3D array, the first axis (axis 0) has two elements.
-        # The first element is the array with the current grid state
-        # (with rows [axis 1] and columns [axis 2]). The second
-        # element is the array with the number of live neighbors
-        # (also with rows [axis 1] and columns [axis 2]). On this 3D
-        # array, we will apply a function along the 0 axis that will
-        # iterate over the combination of pairs of values from both
-        # the grid state array and the live neighbor count array.
-        # Each pair of values that will be iterated over will be like
-        # this: (grid state value, live neighbor count value). Above
-        # we defined the function that will be applied along the 0 axis.
-        # This function takes a pair of values and returns the new state
-        # for the cell in the next generation.
+        # In this 3D array, the first axis (axis 0) has two elements. The first
+        # element is the array with the current grid state (with rows [axis 1]
+        # and columns [axis 2]). The second element is the array with the number
+        # of live neighbors (also with rows [axis 1] and columns [axis 2]). On
+        # this 3D array, we will apply a function along the 0 axis that will
+        # iterate over the combination of pairs of values from both the grid
+        # state array and the live neighbor count array. Each pair of values
+        # that will be iterated over will be like this: (grid state value, live
+        # neighbor count value). Above we defined the function that will be
+        # applied along the 0 axis. This function takes a pair of values and
+        # returns the new state for the cell in the next generation.
         next_generation_grid_states_da = da.apply_along_axis(
             func1d=get_cell_next_generation_state,
             axis=0,
             arr=grid_array_and_live_neighbor_counts_da,
+            # Specifying the shape of the output array is necessary for Dask.
+            # For some reason specifying an empty tuple is the only way to get
+            # the expected output shape.
             shape=(),
-            # shape=make_meta(grid_array_and_live_neighbor_counts_da).shape,
             dtype=make_meta(grid_array_and_live_neighbor_counts_da).dtype
         )
-
-        # print(make_meta(grid_array_and_live_neighbor_counts_da).shape)
-
-        # print(next_generation_grid_states_da.shape)
-        # print(next_generation_grid_states_da)
-
-        # next_generation_grid_states_da = next_generation_grid_states_da.reshape(
-        #     array_dimension_length,
-        #     array_dimension_length
-        # )
-
-        # print(next_generation_grid_states_da)
 
         # Convert the Dask array back to a NumPy array because at this point
         # Numpy should be fast enough.
         next_generation_grid_states = next_generation_grid_states_da.compute()
-
-        # print(next_generation_grid_states.shape)
 
         # Now that we have all the states, update the main grid with the next
         # generation of states.
@@ -417,28 +392,29 @@ def main():
 
         most_active_portion_start = time.time()
 
-        # Create an array for the right-hand grid that is 1/n of a dimension of the
-        # main grid. Start by defining the ration of this small grid to the larger
-        # grid and then calculate the dimension of the small grid.
-        small_grid_ratio = 5
+        # Create an array for the right-hand grid that is 1/n of a dimension of
+        # the main grid.
         small_grid_dimension = int(array_dimension_length / small_grid_ratio)
 
-        # Iterate over the main grid to determine which small grid slice is the most
-        # active. First create an empty list of the differences for each small box
-        # (from the last generation to this generation) so we can add to this list
-        # as we iterate over each small box.
+        # Iterate over the main grid to determine which small grid slice is the
+        # most active. First create an empty list of the differences for each
+        # small box (from the last generation to this generation) so we can add
+        # to this list as we iterate over each small box.
         small_grid_differences = []
 
-        # We will eventually select one of the small grids as the one to be plotted,
-        # so define this as an empty array for now.
+        # We will eventually select one of the small grids as the one to be
+        # plotted, so define this as an empty array for now.
         small_grid_array = np.array([])
 
-        # We will eventually record one the starting positions of each axis of the
-        # small grid within the larger grid. Set these values to None for now.
+        # We will eventually record one the starting positions of each axis of
+        # the small grid within the larger grid. Set these values to None for
+        # now.
         small_box_row_start_in_main_grid = None
         small_box_col_start_in_main_grid = None
 
-        # Start iteration. Iterate over rows. Within each row iterate over columns.
+        # Start iteration. Iterate over rows using chunks that are the size of
+        # the small box. Within each row iterate over columns the size of each
+        # small box.
         for r in range(small_grid_ratio):
 
             for c in range(small_grid_ratio):
@@ -450,24 +426,20 @@ def main():
                 small_box_col_end = small_box_col_start + small_grid_dimension
 
                 # Get the *new* small array for this box
-                this_new_small_grid_array = next_generation_grid_states[
-                                            small_box_row_start: (
-                                                    small_box_row_end + 1
-                                            ),
-                                            small_box_col_start: (
-                                                    small_box_col_end + 1
-                                            )
-                                            ]
+                this_new_small_grid_array = (
+                    next_generation_grid_states[
+                        small_box_row_start: small_box_row_end + 1,
+                        small_box_col_start: small_box_col_end + 1
+                    ]
+                )
 
                 # Get the *last* small array for this box.
-                this_last_small_grid_array = grid_array[
-                                             small_box_row_start: (
-                                                     small_box_row_end + 1
-                                             ),
-                                             small_box_col_start: (
-                                                     small_box_col_end + 1
-                                             )
-                                             ]
+                this_last_small_grid_array = (
+                    grid_array[
+                        small_box_row_start: small_box_row_end + 1,
+                        small_box_col_start: small_box_col_end + 1
+                    ]
+                )
 
                 # Set size of sample (will be 10 percent of the small grid)
                 sample_size = round(this_new_small_grid_array.size / 10)
@@ -482,7 +454,7 @@ def main():
                     replace=False
                 )
 
-                # Create the sample arrays from both arrays we want to compare
+                # Create the sample arrays from both arrays we want to compare.
                 this_new_small_grid_array_sample = (
                     this_new_small_grid_array.flatten()[selected_indices]
                 )
@@ -491,36 +463,39 @@ def main():
                     this_last_small_grid_array.flatten()[selected_indices]
                 )
 
-                # Calculate the difference between the samples from the two arrays
-                # (initial state of the small array and the next state of the small
-                # array).
+                # Calculate the difference between the samples from the two
+                # arrays (initial state of the small array and the next state of
+                # the small array).
                 small_grid_diff_array = np.logical_and(
                     this_new_small_grid_array_sample,
                     this_last_small_grid_array_sample
                 )
                 small_grid_diff_sum = small_grid_diff_array.sum()
 
-                # Add the difference for this small box to the list of differences.
+                # Add the difference for this small box to the list of
+                # differences.
                 small_grid_differences.append(small_grid_diff_sum)
 
                 # If the differences for this small box is the max of all the
                 # differences for all the small boxes so far, set this small box
-                # array as the one we will use in the plot. Also record the upper
-                # left corner positions for this small grid within the larger grid
-                # so that we can later highlight the given smaller grid within the
-                # larger grid.
+                # array as the one we will use in the plot. Also record the
+                # upper left corner positions for this small grid within the
+                # larger grid so that we can later highlight the given smaller
+                # grid within the larger grid.
                 if small_grid_diff_sum == max(small_grid_differences):
 
                     # Define the small grid array
                     small_grid_array = this_new_small_grid_array
 
-                    # Record the corner positions for each dimension of this small
-                    # grid
+                    # Record the corner positions for each dimension of this
+                    # small grid
                     small_box_row_start_in_main_grid = small_box_row_start
                     small_box_col_start_in_main_grid = small_box_col_start
 
         most_active_portion_end = time.time()
-        most_active_portion_duration = most_active_portion_end - most_active_portion_start
+        most_active_portion_duration = (
+                most_active_portion_end - most_active_portion_start
+        )
 
         # Update the generation counter
         counter = counter + 1
@@ -544,24 +519,27 @@ def main():
             f'max gens/s: {generations_per_second} | '
             f'gens: {counter:,.0f} | '
             f'gen secs: {generation_duration:,.1f} | '
-            f'most active area detection secs: {most_active_portion_duration:,.2f}'
+            'most active area detection '
+            f'secs: {most_active_portion_duration:,.2f}'
         )
 
-        # Update the tile (really the x axis label) of the right hand plot to
-        # indicate that it shows the most active part of the main grid.
+        # Update the tile (really the x axis label) of the right hand plot.
         ax[1].set_xlabel('Most Active Portion of Overall Grid')
 
-        # Update the axes to show the main grid and most active portion of the main
-        # grid respectively.
+        # Update the axes to show the main grid and most active portion of the
+        # main grid respectively.
         ax[0].matshow(grid_array, cmap='binary', vmin=0, vmax=1)
         small_grid_cmap = colors.ListedColormap(['white', 'red'])
         ax[1].matshow(small_grid_array, cmap=small_grid_cmap, vmin=0, vmax=1)
 
-        # Draw a box around the portion of the main grid that represents the most
-        # active section that is shown on the right.
+        # Draw a box around the portion of the main grid that represents the
+        # most active section that is shown on the right.
         small_grid_box = patches.Rectangle(
             # Upper left-hand coordinate of the red box
-            xy=(small_box_col_start_in_main_grid, small_box_row_start_in_main_grid),
+            xy=(
+                small_box_col_start_in_main_grid,
+                small_box_row_start_in_main_grid
+            ),
             width=small_grid_dimension,
             height=small_grid_dimension,
             linewidth=1,
@@ -570,7 +548,8 @@ def main():
         )
         ax[0].add_patch(small_grid_box)
 
-        # Pause the plot so we can see its state for the duration of one generation.
+        # Pause the plot so we can see its state for the duration of one
+        # generation.
         plt.pause(generation_duration)
 
 
